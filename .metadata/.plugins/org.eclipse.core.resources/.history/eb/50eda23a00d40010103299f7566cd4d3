@@ -1,0 +1,15 @@
+package com.tms.tms_backend.dto;
+
+import lombok.Data;
+
+@Data
+public class LoadRequestDTO {
+    private Long shipperId;
+    private String loadingCity;
+    private String unloadingCity;
+    private String loadingDate;
+    private String productType;
+    private Double weight;
+    private String weightUnit;
+    private String truckType;
+}

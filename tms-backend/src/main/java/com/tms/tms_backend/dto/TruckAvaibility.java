@@ -1,0 +1,24 @@
+package com.tms.tms_backend.dto;
+
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.Value;
+
+import java.io.Serializable;
+@Data
+@AllArgsConstructor
+@Value
+public class TruckAvaibility{
+
+
+    @NotBlank
+    String truckType;
+
+    @Min(value = 1)
+    int capacity;
+}

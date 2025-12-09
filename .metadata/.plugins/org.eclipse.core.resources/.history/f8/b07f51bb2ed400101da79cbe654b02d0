@@ -1,0 +1,94 @@
+package com.tms.tms_backend.service;
+
+import com.tms.tms_backend.dto.TruckAvaibility;
+import com.tms.tms_backend.entity.Transporter;
+import com.tms.tms_backend.repository.TransporterRepository;
+import jakarta.persistence.OptimisticLockException;
+import jakarta.transaction.Transactional;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+
+@Service
+public class TransporterService {
+
+    private final TransporterRepository transporterRepository;
+
+    public TransporterService(TransporterRepository transporterRepository) {
+        this.transporterRepository = transporterRepository;
+    }
+
+
+
+    public Transporter save(Transporter transporter) {
+        return transporterRepository.save(transporter);
+    }
+
+
+    public Transporter getTransporterById(UUID transporterId) {
+        return transporterRepository.findById(transporterId)
+                .orElseThrow(() -> new IllegalArgumentException("Transporter not found with ID: " + transporterId));
+    }
+
+
+    public Map<UUID, Transporter> getTransportersByIds(Set<UUID> ids) {
+        return transporterRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Transporter::getTransporterID,t -> t));
+    }
+
+
+    @Transactional(rollbackOn = {OptimisticLockException.class})
+    public void deductTruckCapacity(UUID transporterId, String truckType, int count) {
+
+        Transporter transporter = getTransporterById(transporterId);
+
+        List<TruckAvaibility> updatedCapacity = transporter.getAvailableTrucks().stream()
+                .map(ta -> {
+
+                    if (ta.getTruckType().equalsIgnoreCase(truckType)) {
+                        int newCount = ta.getCapacity() - count;
+                        if (newCount < 0) {
+
+                            throw new IllegalStateException("Capacity underflow for truck type " + truckType + ". Cannot deduct " + count + " trucks.");
+                        }
+
+                        return new TruckAvaibility(ta.getTruckType(), newCount);
+                    }
+                    return ta;
+                })
+                .collect(Collectors.toList());
+
+        transporter.setAvailableTrucks(updatedCapacity);
+
+
+        transporterRepository.save(transporter);
+    }
+
+
+
+
+    @Transactional(rollbackOn = {OptimisticLockException.class})
+    public void restoreTruckCapacity(UUID transporterId, String truckType, int count) {
+        Transporter transporter = getTransporterById(transporterId);
+
+        List<TruckAvaibility> updatedCapacity = transporter.getAvailableTrucks().stream()
+                .map(ta -> {
+                   
+                    if (ta.getTruckType().equalsIgnoreCase(truckType)) {
+
+                        return new TruckAvaibility(ta.getTruckType(), ta.getCount() + count);
+                    }
+                    return ta;
+                })
+                .collect(Collectors.toList());
+
+        transporter.setAvailableTrucks(updatedCapacity);
+
+        transporterRepository.save(transporter);
+    }
+}

@@ -1,0 +1,87 @@
+package com.tms.tms_backend.controller;
+
+import com.tms.tms_backend.dto.BidScoreDTO;
+import com.tms.tms_backend.dto.LoadRequestDTO;
+import com.tms.tms_backend.entity.Load;
+import com.tms.tms_backend.enums.LoadStatusType;
+import com.tms.tms_backend.enums.WeightUnitType;
+import com.tms.tms_backend.service.LoadService;
+
+import jakarta.validation.Valid;
+
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/load")
+public class LoadController {
+
+    private final LoadService loadService;
+
+    public LoadController(LoadService loadService) {
+        this.loadService = loadService;
+    }
+
+
+    @PostMapping
+    public ResponseEntity<Load> createLoad(@Valid @RequestBody LoadRequestDTO dto) {
+
+        Load load = new Load();
+
+        load.setShipperId(dto.getShipperId());
+        load.setLoadingCity(dto.getLoadingCity());
+        load.setUnloadingCity(dto.getUnloadingCity());
+        load.setLoadingDate(Instant.parse(dto.getLoadingDate()));
+        load.setProductType(dto.getProductType());
+        load.setWeight(dto.getWeight());
+        load.setWeightUnit(WeightUnitType.valueOf(dto.getWeightUnit()));
+        load.setTruckType(dto.getTruckType());
+        load.setRemainingTrucks(dto.getRemainingTrucks());
+        load.setStatus(LoadStatusType.POSTED);
+
+        Load savedLoad = loadService.saveLoad(load);
+        return ResponseEntity.status(HttpStatus.CREATED).body(savedLoad);
+    }
+
+
+
+    @GetMapping
+    public ResponseEntity<List<Load>> listLoads(
+            @RequestParam(required = false) String shipperId,
+            @RequestParam(required = false) LoadStatusType status,
+            Pageable pageable) {
+
+        // Fetches loads based on filter criteria
+        List<Load> loads = loadService.findAllLoads(shipperId, status);
+        return ResponseEntity.ok(loads);
+    }
+
+
+    @GetMapping("/{loadId}")
+    public ResponseEntity<Load> getLoadDetails(@PathVariable UUID loadId) {
+        Load load = loadService.findLoadById(loadId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Load not found with ID: " + loadId));
+        return ResponseEntity.ok(load);
+    }
+
+
+    @PatchMapping("/{loadId}/cancel")
+    public ResponseEntity<Void> cancelLoad(@PathVariable UUID loadId) {
+        loadService.cancelLoad(loadId); 
+        return ResponseEntity.noContent().build();
+    }
+
+
+    @GetMapping("/{loadId}/best-bids")
+    public ResponseEntity<List<BidScoreDTO>> getBestBids(@PathVariable UUID loadId) {
+        List<BidScoreDTO> bestBids = loadService.getBestBids(loadId);
+        return ResponseEntity.ok(bestBids);
+    }
+}

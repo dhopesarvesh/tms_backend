@@ -1,0 +1,263 @@
+package com.tms.tms_backend.service;
+
+import com.tms.tms_backend.dto.BidScoreDTO;
+import com.tms.tms_backend.entity.Bid;
+import com.tms.tms_backend.entity.Booking;
+import com.tms.tms_backend.entity.Load;
+import com.tms.tms_backend.entity.Transporter;
+import com.tms.tms_backend.enums.BidStatusType;
+import com.tms.tms_backend.enums.BookingStatusType;
+import com.tms.tms_backend.enums.LoadStatusType;
+import com.tms.tms_backend.repository.BidRepository;
+import com.tms.tms_backend.repository.BookingRepository;
+import com.tms.tms_backend.repository.LoadRepository;
+import com.tms.tms_backend.repository.TransporterRepository;
+import jakarta.persistence.OptimisticLockException; // Use Jakarta Persistence's OptimisticLockException
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+public class LoadService {
+
+    private final LoadRepository loadRepository;
+
+    private final TransporterService transporterService;
+    private final BidRepository bidRepository;
+    private final BookingRepository bookingRepository;
+
+
+
+    public LoadService(LoadRepository loadRepository, TransporterService transporterService, BidRepository bidRepository, BookingRepository bookingRepository) {
+        this.loadRepository = loadRepository;
+        this.transporterService = transporterService;
+        this.bidRepository = bidRepository;
+        this.bookingRepository = bookingRepository;
+    }
+
+    public Load saveLoad(Load load) {
+        return loadRepository.save(load);
+    }
+
+    public Optional<Load> findLoadById(UUID loadId){
+        return loadRepository.findById(loadId);
+    }
+
+    public List<Load> findAllLoads(String shipperId, LoadStatusType statusType){
+        if(shipperId != null && statusType !=null){
+            return loadRepository.findByShipperIdAndStatus(shipperId,statusType);
+        }else if(shipperId != null){
+            return loadRepository.findByShipperId(shipperId);
+        }else if(statusType != null){
+            return loadRepository.findByStatus(statusType);
+        }else {
+            return loadRepository.findAll();
+        }
+    }
+
+
+    public List<Bid> findBidsByCriteria(UUID loadId, UUID transporterId, BidStatusType statusType){
+        if(loadId != null && transporterId != null && statusType != null) {
+            return bidRepository.findByLoadIdAndTransporterIdAndStatus(loadId, transporterId, statusType);
+        }
+
+        else if (loadId !=null && transporterId !=null) {
+            return bidRepository.findByLoadIdAndTransporterId(loadId, transporterId);
+
+        } else if (loadId != null) {
+            return bidRepository.findByLoadId(loadId);
+
+        } else if (statusType != null) {
+            return  bidRepository.findByStatus(statusType);
+        }else{
+            return new ArrayList<>();
+        }
+    }
+
+
+    @Transactional
+    public Bid submitNewBid(Bid newBid){
+        Load load = loadRepository.findById(newBid.getLoadId())
+                .orElseThrow(() -> new IllegalArgumentException("Load NOT Found"));
+
+        if (load.getStatus() == LoadStatusType.CANCELLED || load.getStatus() == LoadStatusType.BOOKED) {
+            throw new IllegalStateException("Cannot bid on a load with status: " + load.getStatus());
+        }
+
+
+        Transporter transporter = transporterService.getTransporterById(newBid.getTransporterId());
+
+        String requiredTruckType = load.getTruckType();
+        int trucksNeeded = newBid.getTrucksOffered();
+
+        boolean hasCapacity = transporter.getAvailableTrucks().stream()
+                .filter(ta -> ta.getTruckType().equalsIgnoreCase(requiredTruckType))
+                .anyMatch(ta -> ta.getCount() >= trucksNeeded);
+
+        if (!hasCapacity) {
+            throw new IllegalStateException("Transporter does not have required capacity (" + trucksNeeded + ") for " + requiredTruckType + " trucks.");
+        }
+
+        Bid savedBid = bidRepository.save(newBid);
+
+        if (load.getStatus() == LoadStatusType.POSTED) {
+            load.setStatus(LoadStatusType.OPEN_FOR_BIDS);
+            loadRepository.save(load);
+        }
+
+        return savedBid;
+    }
+
+    public List<BidScoreDTO> getBestBids(UUID loadId){
+        List<Bid> bids = bidRepository.findByLoadId(loadId);
+
+
+        Set<UUID> transporterIds = bids.stream()
+                .map(Bid::getTransporterId)
+                .collect(Collectors.toSet());
+
+
+        Map<UUID, Transporter> transporters = transporterService.getTransportersByIds(transporterIds);
+
+        return bids.stream()
+                .map(bid -> {
+                    Transporter transporter = transporters.get(bid.getTransporterId());
+
+                    if (transporter == null || transporter.getRating() == null) return null;
+                    BigDecimal one = BigDecimal.ONE;
+                    BigDecimal five = new BigDecimal("5.0");
+                    BigDecimal rateFactor = new BigDecimal("0.7");
+                    BigDecimal ratingFactor = new BigDecimal("0.3"); // Should be ratingFactor not rateFactor for the second part
+
+                    BigDecimal rateInverse = one.divide(bid.getProposedRate(), 4, RoundingMode.HALF_UP);
+
+                    BigDecimal normalizedRating = transporter.getRating().divide(five ,4,RoundingMode.HALF_UP);
+
+
+                    BigDecimal score = (rateInverse.multiply(rateFactor))
+                            .add(normalizedRating.multiply(ratingFactor))
+                            .setScale(4,RoundingMode.HALF_UP);
+
+                    return  new BidScoreDTO(bid, score);
+
+                })
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(BidScoreDTO::score).reversed())
+                .collect(Collectors.toList());
+    }
+
+
+    @jakarta.transaction.Transactional(rollbackOn = {OptimisticLockException.class, IllegalStateException.class})
+    public Booking acceptBidAndBook(UUID bidId, int allocatedTrucks){
+        Bid winningBid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new IllegalArgumentException("Bid NOT Found"));
+        Load load = loadRepository.findById(winningBid.getLoadId())
+                .orElseThrow(()-> new IllegalArgumentException("Load NOT Found"));
+
+        if (load.getStatus() == LoadStatusType.BOOKED || load.getStatus() == LoadStatusType.CANCELLED) {
+            throw new IllegalStateException("Load is no longer available for booking.");
+        }
+        if (allocatedTrucks <= 0 || allocatedTrucks > load.getRemainingTrucks()) {
+            throw new IllegalArgumentException("Invalid truck allocation count. Remaining trucks: " + load.getRemainingTrucks());
+        }
+
+
+        transporterService.deductTruckCapacity(
+                winningBid.getTransporterId(),
+                load.getTruckType(),
+                allocatedTrucks
+        );
+
+        Booking booking = new Booking(
+                null, winningBid.getLoadId(),
+                winningBid.getBidID(), // FIX: Corrected bid ID accessor (getBidID -> getBidId)
+                winningBid.getTransporterId(),
+                allocatedTrucks, winningBid.getProposedRate(), BookingStatusType.CONFIRMED, null
+        );
+
+        Booking savedBooking = bookingRepository.save(booking);
+
+        winningBid.setStatus(BidStatusType.ACCEPTED);
+        bidRepository.save(winningBid);
+
+        load.setRemainingTrucks(load.getRemainingTrucks() - allocatedTrucks);
+
+        if (load.getRemainingTrucks() == 0){
+            load.setStatus(LoadStatusType.BOOKED);
+
+
+            List<Bid> pendingBids = bidRepository.findByLoadIdAndStatus(load.getLoadID(), BidStatusType.PENDING);
+            pendingBids.forEach(bid -> bid.setStatus(BidStatusType.REJECTED));
+            bidRepository.saveAll(pendingBids);
+        }else{
+            load.setStatus(LoadStatusType.OPEN_FOR_BIDS);
+        }
+
+        loadRepository.save(load);
+
+        return savedBooking;
+    }
+
+
+    @jakarta.transaction.Transactional(rollbackOn = {OptimisticLockException.class, IllegalStateException.class})
+    public void cancelBooking(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not Found"));
+
+        if (booking.getStatus() == BookingStatusType.CANCELLED || booking.getStatus() == BookingStatusType.COMPLETED) {
+            throw new IllegalStateException("Booking is already cancelled or completed.");
+        }
+
+        Load load = loadRepository.findById(booking.getLoadId())
+                .orElseThrow(() -> new IllegalStateException("Associated Load not Found"));
+
+
+
+        transporterService.restoreTruckCapacity(
+                booking.getTransporterId(),
+                load.getTruckType(),
+                booking.getAllocatedTrucks()
+        );
+
+        booking.setStatus(BookingStatusType.CANCELLED);
+        bookingRepository.save(booking);
+
+        load.setRemainingTrucks(load.getRemainingTrucks() + booking.getAllocatedTrucks());
+
+
+        if (load.getStatus() == LoadStatusType.BOOKED || load.getStatus() == LoadStatusType.CANCELLED) {
+            if (load.getRemainingTrucks() > 0) {
+                load.setStatus(LoadStatusType.OPEN_FOR_BIDS);
+            }
+        }
+
+        loadRepository.save(load);
+    }
+
+    @Transactional
+    public void cancelLoad(UUID loadId) {
+        Load load = loadRepository.findById(loadId)
+                .orElseThrow(() -> new IllegalArgumentException("Load NOT Found"));
+
+        if (load.getStatus() == LoadStatusType.CANCELLED) {
+            throw new IllegalStateException("Load is already cancelled");
+
+
+        }
+
+        List<Booking> confirmedBookings = bookingRepository.findByLoadIdAndStatus(loadId, BookingStatusType.CONFIRMED);
+
+        if (!confirmedBookings.isEmpty()) {
+            confirmedBookings.forEach(booking -> cancelBooking(booking.getBookingId()));
+        }
+
+        load.setStatus(LoadStatusType.CANCELLED);
+        load.setRemainingTrucks(0);
+        loadRepository.save(load);
+
+    }
+}

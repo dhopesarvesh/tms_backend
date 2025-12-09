@@ -1,0 +1,69 @@
+package com.tms.tms_backend.controller;
+
+
+import com.tms.tms_backend.dto.TransporterRequestDTO;
+import com.tms.tms_backend.dto.TruckAvaibility;
+import com.tms.tms_backend.entity.Load;
+import com.tms.tms_backend.entity.Transporter;
+import com.tms.tms_backend.service.TransporterService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
+import java.util.UUID;
+
+
+@RestController
+@RequestMapping("/transporter")
+public class TransporterController {
+    private final TransporterService transporterService;
+
+    public TransporterController(TransporterService transporterService) {
+        this.transporterService = transporterService;
+    }
+
+
+    @PostMapping
+    public ResponseEntity<Transporter> registerTransporter(@RequestBody TransporterRequestDTO requestDTO){
+        Transporter transporter = new Transporter();
+        transporter.setCompanyName(requestDTO.getCompanyName());
+        transporter.setAvailableTrucks(requestDTO.getAvailableTrucks());
+        transporter.setRating(requestDTO.getRating());
+        Transporter savedTransporter = transporterService.save(transporter);
+        return new ResponseEntity<>(savedTransporter, HttpStatus.CREATED);
+
+    }
+
+    @PutMapping("{transporterId}/trucks")
+    public ResponseEntity<Transporter> updateAvailableTrucks(
+        @PathVariable UUID transporterId,
+        @RequestBody TruckUpdateRequest request){
+        Transporter transporter = transporterService.getTransporterById(transporterId);
+        
+        if (request.getNewAvailableTrucks() != null) {
+            transporter.setAvailableTrucks(request.getNewAvailableTrucks());
+        }
+
+        transporter.setAvailableTrucks(request.getNewAvailableTrucks());
+        Transporter updatedTransporter = transporterService.save(transporter);
+
+        return  ResponseEntity.ok(updatedTransporter);
+    }
+
+    public static class TruckUpdateRequest {
+        private List<TruckAvaibility> newAvailableTrucks;
+        public List<TruckAvaibility> getNewAvailableTrucks() { return newAvailableTrucks; }
+
+    }
+    
+    @GetMapping("/{transporterId}")
+    public ResponseEntity<Transporter> getTransporterDetails(@PathVariable UUID transporterId) {
+        Transporter transporter = transporterService.getTransporterById(transporterId);
+        
+        return ResponseEntity.ok(transporter);
+    }
+
+
+}

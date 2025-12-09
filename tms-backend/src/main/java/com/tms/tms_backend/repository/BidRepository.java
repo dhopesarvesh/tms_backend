@@ -1,0 +1,23 @@
+package com.tms.tms_backend.repository;
+
+import com.tms.tms_backend.entity.Bid;
+import com.tms.tms_backend.enums.BidStatusType;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.UUID;
+
+@Repository
+public interface BidRepository extends JpaRepository<Bid, UUID> {
+
+    List<Bid> findByLoadId(UUID loadId);
+
+    List<Bid> findByLoadIdAndStatus(UUID loadId, BidStatusType statusType);
+
+    List<Bid> findByLoadIdAndTransporterIdAndStatus(UUID loadId, UUID transporterId, BidStatusType statusType);
+
+    List<Bid> findByStatus(BidStatusType statusType);
+
+    List<Bid> findByLoadIdAndTransporterId(UUID loadId, UUID transporterId);
+}

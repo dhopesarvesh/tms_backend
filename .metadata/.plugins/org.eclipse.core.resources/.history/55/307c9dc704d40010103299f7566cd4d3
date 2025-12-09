@@ -1,0 +1,99 @@
+package com.tms.tms_backend.entity;
+
+import com.tms.tms_backend.enums.LoadStatusType;
+import com.tms.tms_backend.enums.WeightUnitType;
+import jakarta.persistence.*;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "loads")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public  class Load {
+
+     @Id
+     @GeneratedValue(strategy = GenerationType.AUTO)
+     private UUID loadID;
+
+     @NotBlank(message = "Shipper Id is required")
+     @Column(name="shipperid" ,nullable = false, length = 50)
+     private String shipperId;
+
+
+     @NotNull(message = "Loading City  is required")
+     @Column(name="loadingcity", nullable = false, length = 50)
+     private String loadingCity;
+
+
+     @NotNull(message = "Unloading City Id is required")
+     @Column(name="loadingcity",nullable = false, length = 50)
+     private String unloadingCity;
+
+     @Column(name="unloadingdate", nullable = false)
+     private Instant loadingDate;
+
+     @NotNull(message = "Product Type is Required")
+     @Column(name="producttype",nullable = false,length = 50)
+     private String productType;
+
+     @NotNull(message = "Weight must be required")
+     @Positive(message = "Weight must be positive")
+     @Column(name="weight",nullable = false, precision = 10 , scale = 2)
+     private BigDecimal weight;
+
+
+     @Enumerated(EnumType.STRING)
+     @Column(name="weightunit",nullable = false)
+     private WeightUnitType weightUnit;
+
+
+     @NotNull(message = "Truck type is required")
+     @Column(name="trucktype",nullable = false, length = 50)
+     private String truckType;
+
+
+     @NotNull(message = "No of Trucks Required")
+     @Min(value = 1, message = "At least one truck is required")
+     @Column(name="nooftrucks",nullable = false)
+     private Integer remainingTrucks;
+
+     @Enumerated(EnumType.STRING)
+     @Column(name="status",nullable = false)
+     private LoadStatusType status = LoadStatusType.POSTED;
+
+
+     @Column(name="dateposted",nullable = false, updatable = false)
+     private Instant datePosted = Instant.now();
+
+     @PrePersist
+     protected  void onCreate(){
+          if(this.loadID == null){
+               this.loadID = UUID.randomUUID();
+
+          }
+
+          if(this.datePosted == null){
+               this.datePosted = Instant.now();
+          }
+     }
+
+
+
+
+
+
+
+
+
+}

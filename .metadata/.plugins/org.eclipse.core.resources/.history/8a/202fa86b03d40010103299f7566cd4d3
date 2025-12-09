@@ -1,0 +1,59 @@
+package com.tms.tms_backend.controller;
+
+
+import com.tms.tms_backend.dto.BidRequestDTO;
+import com.tms.tms_backend.entity.Bid;
+import com.tms.tms_backend.enums.BidStatusType;
+import com.tms.tms_backend.exception.ResourceNotFoundException;
+import com.tms.tms_backend.service.BidService;
+import com.tms.tms_backend.service.LoadService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/bid")
+public class BidController {
+
+    private final LoadService loadService;
+    private final BidService bidService;
+
+
+    public BidController(LoadService loadService, BidService bidService) {
+        this.loadService = loadService;
+        this.bidService = bidService;
+    }
+
+
+    @PostMapping
+    public ResponseEntity<Bid> submitBid(@RequestBody BidRequestDTO requestDTO){
+        Bid bid = new Bid();
+        bid.setLoadId(requestDTO.getLoadId());
+        bid.setTransporterId(requestDTO.getTransporterId());
+        bid.setTransporterId(requestDTO.getTransporterId());
+        bid.setProposedRate(requestDTO.getProposedRate());
+        bid.setTrucksOffered(requestDTO.getTrucksOffered());
+        bid.setStatus(BidStatusType.PENDING);
+
+        Bid savedBid = loadService.submitNewBid(bid);
+        return new ResponseEntity<>(savedBid, HttpStatus.CREATED);
+
+    }
+
+
+    @GetMapping("{bidId}")
+    public ResponseEntity<Bid> getBidDetails(@PathVariable UUID bidId) throws ResourceNotFoundException {
+        Bid bid = bidService.findBidById(bidId)
+                .orElseThrow(()-> new ResourceNotFoundException("Bid NOT Found"));
+        return ResponseEntity.ok(bid);
+    }
+
+
+    @PatchMapping("/{bidId}/reject")
+    public ResponseEntity<Bid> rejectBid(@PathVariable UUID bidId){
+        Bid rejectedBid = bidService.rejectBid(bidId);
+        return ResponseEntity.ok(rejectedBid);
+    }
+}

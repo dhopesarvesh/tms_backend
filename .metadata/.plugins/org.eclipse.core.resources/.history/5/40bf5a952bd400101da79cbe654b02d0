@@ -1,0 +1,70 @@
+package com.tms.tms_backend.entity;
+
+
+import com.tms.tms_backend.enums.BidStatusType;
+import jakarta.persistence.*;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "bids",
+uniqueConstraints = {@UniqueConstraint(columnNames = {"loadId", "transporterID"})
+}
+)
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class Bid {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private UUID bidId;
+
+    @NotNull(message = "Load ID is required")
+    @Column(nullable = false)
+    private UUID loadId;
+
+    @NotNull(message = "Transporter ID is required")
+    @Column(nullable = false)
+    private UUID transporterId;
+
+
+    @NotNull(message = "Proposed rate is required")
+    @Positive(message = "Proposed rate must be greater than zero")
+    @Digits(integer = 8, fraction = 2, message = "Rate must be a valid monetary value")
+    @Column(nullable = false, precision = 10, scale = 2)
+    private BigDecimal proposedRate;
+
+    @NotNull(message = "Number of trucks offered is required")
+    @Min(value = 1, message = "At least one truck must be offered")
+    @Column(nullable = false)
+    private Integer trucksOffered;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private BidStatusType status = BidStatusType.PENDING;
+
+
+    @Column(nullable = false, updatable = false)
+    private Instant submittedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.bidID == null) {
+            this.bidID = UUID.randomUUID();
+        }
+        if (this.submittedAt == null) {
+            this.submittedAt = Instant.now();
+        }
+    }
+
+}
